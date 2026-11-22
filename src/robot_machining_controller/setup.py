@@ -1,3 +1,5 @@
+from glob import glob
+
 from setuptools import setup
 
 package_name = 'robot_machining_controller'
@@ -9,9 +11,12 @@ setup(
     data_files=[
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        ('share/' + package_name + '/launch', glob('launch/*.launch.py')),
+        ('share/' + package_name + '/config', glob('config/*.yaml')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
+    tests_require=['pytest'],
     maintainer='Tomasz Golaszewski',
     maintainer_email='tomasz.golaszewski@ezut.edu.pl',
     description='Workpiece position detection and robot position forwarding',
@@ -20,6 +25,7 @@ setup(
         'console_scripts': [
             'workpiece_position_detector = robot_machining_controller.workpiece_position_detector:main',
             'trajectory_generator = robot_machining_controller.trajectory_generator:main',
+            'robot_controller = robot_machining_controller.robot_controller:main',
         ],
     },
 )

@@ -218,3 +218,18 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# colcon workspace
+install/
+log/
+
+# VS Code: share settings.json / c_cpp_properties.json, ignore the C/C++ IntelliSense cache (~1 GB)
+.vscode/
+
+# Claude Code: personal settings (CLAUDE.md and .claude/settings.json are shared)
+.claude/settings.local.json
+
+# ROS 2 bags: large recordings, keep them outside git (e.g. share via cloud storage)
+*.mcap
+*.db3
+rosbag2_*/
