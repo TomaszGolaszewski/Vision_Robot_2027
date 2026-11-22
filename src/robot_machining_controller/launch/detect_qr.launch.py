@@ -20,6 +20,8 @@ def generate_launch_description():
         DeclareLaunchArgument('height', default_value='480'),
         # DPMM is valid only for the camera and resolution it was measured with
         DeclareLaunchArgument('dpmm', default_value='210.0', description='px per 100 mm at nominal distance'),
+        DeclareLaunchArgument('show_image', default_value='false',
+                              description='cv2.imshow window with the detection (also on topic image_debug)'),
         DeclareLaunchArgument('fake_robot', default_value='true',
                               description='publish a fixed robot pose instead of the robot driver TF'),
 
@@ -42,5 +44,5 @@ def generate_launch_description():
              arguments=['--z', '-0.1', '--frame-id', 'base_link', '--child-frame-id', 'tool0']),
 
         # image -> code pose in base_link (topic workpiece_position)
-        Node(package=PKG, executable='workpiece_position_detector', parameters=[params, {'dpmm': arg('dpmm')}]),
+        Node(package=PKG, executable='workpiece_position_detector', parameters=[params, {'dpmm': arg('dpmm'), 'show_image': arg('show_image')}]),
     ])

@@ -39,6 +39,11 @@ def detect_qr_pose(gray, K, dist, side, detector, max_reproj_px=2.0):
     found, corners = detector.detect(gray)
     if not found or corners is None:
         return None
+    return qr_pose_from_corners(corners, K, dist, side, max_reproj_px)
+
+
+def qr_pose_from_corners(corners, K, dist, side, max_reproj_px=2.0):
+    """Code pose in the camera frame from its 4 image corners (TL, TR, BR, BL), or None when implausible."""
     # 2. 3D corners (known code size) + 2D corners + camera intrinsics -> pose of the code relative to the camera
     n, rvecs, tvecs, errs = cv2.solvePnPGeneric(qr_object_points(side), corners.reshape(4, 2).astype(float),
                                                 K, dist, flags=cv2.SOLVEPNP_IPPE_SQUARE)

@@ -39,6 +39,10 @@ ros2 param set /trajectory_generator mode direct   # switch path live
 # QR detection only (USB camera, no robot): workpiece_position = code pose relative to the camera
 ros2 launch robot_machining_controller detect_qr.launch.py device_id:=0 width:=640 height:=480 dpmm:=210.0
 ros2 topic echo /workpiece_position
+
+# visualization: green outline + code axes = pose accepted, red outline = pose rejected (implausible)
+ros2 launch robot_machining_controller detect_qr.launch.py show_image:=true  # cv2.imshow window (needs a display)
+ros2 run rqt_image_view rqt_image_view /image_debug                          # or view the debug topic
 ```
 
 ### Known limitations (stage 1)

@@ -6,6 +6,7 @@ workpiece_position_detector:
     # fallback intrinsics until a calibrated camera_info is published
     dpmm: 210.0                # px per 100 mm at nominal_distance_mm
     nominal_distance_mm: 440.0
+    show_image: false          # cv2.imshow window; the same picture is on topic image_debug
 
 trajectory_generator:
   ros__parameters:

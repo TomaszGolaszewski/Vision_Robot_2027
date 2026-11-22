@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.2] - 2026-11-22
+
+### Added
+
+- Added the `image_debug` topic to `workpiece_position_detector` node: the camera image with the detected QR outline (green = accepted, red = pose rejected) and the code axes. Drawn only when someone subscribes, e.g. `rqt_image_view`.
+- The debug image shows the processed frame rate and the accepted QR detections per second (last 1 s).
+- Added the `show_image` parameter (and `detect_qr.launch.py` argument) that shows the same picture in a `cv2.imshow` window.
+
 ## [0.1.1] - 2026-11-22
 
 ### Added
