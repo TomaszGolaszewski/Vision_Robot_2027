@@ -13,12 +13,13 @@ from rclpy.time import Time
 from sensor_msgs.msg import CameraInfo, Image
 from tf2_ros import Buffer, TransformException, TransformListener
 
-from robot_machining_controller.pose_math import (camera_matrix_from_dpmm, compose, from_transform,
-                                                  qr_pose_from_corners, to_pose)
+from robot_machining_controller.pose_math import (aruco_detector, camera_matrix_from_dpmm, compose,
+                                                  find_marker_corners, from_transform, marker_pose_from_corners,
+                                                  to_pose)
 
 
 class WorkpiecePositionDetector(Node):
-    """Detects the QR code in camera images and publishes its pose in the robot base frame.
+    """Detects the ArUco marker in camera images and publishes its pose in the robot base frame.
 
     in:  image_raw (Image), camera_info (CameraInfo, optional), TF base_link -> camera_optical_frame
     out: workpiece_position (PoseStamped, code pose in base_link, stamped with the image time)
@@ -30,7 +31,9 @@ class WorkpiecePositionDetector(Node):
 
         # --- parameters ---
         self.base_frame = self.declare_parameter('base_frame', 'base_link').value       # output frame
-        self.side = self.declare_parameter('qr_side_m', 0.05).value                     # code side length [m]
+        self.side = self.declare_parameter('marker_side_m', 0.1).value                  # outer black edge [m]
+        self.dictionary = self.declare_parameter('aruco_dictionary', 'DICT_4X4_50').value  # cv2.aruco name
+        self.marker_id = self.declare_parameter('marker_id', 0).value                   # other ids are ignored
         self.dpmm = self.declare_parameter('dpmm', 210.0).value                         # px per 100 mm ...
         self.nominal_distance_mm = self.declare_parameter('nominal_distance_mm', 440.0).value  # ... at this distance
         self.show_image = self.declare_parameter('show_image', False).value             # cv2.imshow window
@@ -39,9 +42,9 @@ class WorkpiecePositionDetector(Node):
         self.K = None      # 3x3 camera matrix
         self.dist = None   # lens distortion coefficients
 
-        # --- tools: ROS image <-> OpenCV conversion, QR detector, TF buffer ---
+        # --- tools: ROS image <-> OpenCV conversion, ArUco detector, TF buffer ---
         self.bridge = CvBridge()
-        self.detector = cv2.QRCodeDetector()
+        self.detector = aruco_detector(self.dictionary)
         self.tf_buffer = Buffer()
         # separate internal node + thread, so the blocking lookup below can wait for TF at the image stamp
         self.tf_listener = TransformListener(self.tf_buffer, None, spin_thread=True)
@@ -52,7 +55,7 @@ class WorkpiecePositionDetector(Node):
 
         # --- topics ---
         self.create_subscription(CameraInfo, 'camera_info', self.camera_info_callback, 10)
-        # depth 1: detection (~65 ms at 1280x960) is slower than the camera, always take the newest frame
+        # depth 1: if detection is slower than the camera, always take the newest frame
         self.create_subscription(Image, 'image_raw', self.image_callback,
                                  QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT))
         self.workpiece_position_publisher = self.create_publisher(PoseStamped, 'workpiece_position', 10)
@@ -65,17 +68,17 @@ class WorkpiecePositionDetector(Node):
             self.dist = np.array(msg.d) if len(msg.d) else None
 
     def image_callback(self, msg):
-        # ROS image -> grayscale OpenCV image (QR detection does not need colour)
+        # ROS image -> grayscale OpenCV image (marker detection does not need colour)
         gray = self.bridge.imgmsg_to_cv2(msg, 'mono8')
         K, dist = self.K, self.dist
         if K is None:
             # shortcut: nominal pinhole from DPMM, no distortion; publish a calibrated camera_info for real accuracy
             K = camera_matrix_from_dpmm(gray.shape[1], gray.shape[0], self.dpmm, self.nominal_distance_mm)
 
-        # code corners in the image, then code pose relative to the camera; None = no (plausible) code
-        found, corners = self.detector.detect(gray)
-        found = found and corners is not None
-        code_in_camera = qr_pose_from_corners(corners, K, dist, self.side) if found else None
+        # marker corners in the image, then marker pose relative to the camera; None = no (plausible) marker
+        corners = find_marker_corners(gray, self.detector, self.marker_id)
+        found = corners is not None
+        code_in_camera = marker_pose_from_corners(corners, K, dist, self.side) if found else None
         now = time.monotonic()
         for times, hit in ((self.frame_times, True), (self.detection_times, code_in_camera is not None)):
             if hit:
@@ -105,10 +108,10 @@ class WorkpiecePositionDetector(Node):
         self.workpiece_position_publisher.publish(out)
 
     def show_debug(self, msg, gray, corners, code_in_camera, K, dist):
-        """Draw the detection: green outline + code axes (x red, y green, z blue), red outline = pose rejected."""
+        """Draw the detection: green outline + marker axes (x red, y green, z blue), red outline = pose rejected."""
         img = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
         # processed frames can be fewer than camera frames: the subscription keeps only the newest one
-        text = f'{len(self.frame_times)} fps, {len(self.detection_times)} QR/s'
+        text = f'{len(self.frame_times)} fps, {len(self.detection_times)} markers/s'
         cv2.putText(img, text, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 4)
         cv2.putText(img, text, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
         if corners is not None:

@@ -3,7 +3,7 @@
 Conventions used everywhere:
 - a pose is a tuple (position as np.array [m], scipy Rotation),
 - quaternions are in ROS / scipy order (x, y, z, w),
-- the code frame: origin in the code centre, x right, y up, z out of the board (towards the viewer),
+- the code frame: origin in the ArUco marker centre, x right, y up, z out of the board (towards the viewer),
 - the camera frame is the ROS optical frame: x right, y down, z forward (along the viewing direction).
 """
 import cv2
@@ -26,31 +26,58 @@ def camera_matrix_from_dpmm(width, height, dpmm, distance_mm):
     return np.array([[f, 0, (width - 1) / 2], [0, f, (height - 1) / 2], [0, 0, 1]], dtype=float)
 
 
-def qr_object_points(side):
-    """Code corners in the code frame (x right, y up, z out of the board), in QRCodeDetector order TL, TR, BR, BL."""
+def marker_object_points(side):
+    """Marker corners in the code frame (x right, y up, z out of the board), in ArUco order TL, TR, BR, BL."""
     h = side / 2
     # all corners lie in the board plane z = 0; this order is also the one SOLVEPNP_IPPE_SQUARE requires
     return np.array([[-h, h, 0], [h, h, 0], [h, -h, 0], [-h, -h, 0]], dtype=float)
 
 
-def detect_qr_pose(gray, K, dist, side, detector, max_reproj_px=2.0):
-    """Code pose in the camera frame as (position, Rotation), or None when no plausible code is found."""
-    # 1. find the 4 outer corners of the code in the image (pixels)
-    found, corners = detector.detect(gray)
-    if not found or corners is None:
+def aruco_detector(dictionary_name):
+    """(dictionary, detector parameters) for cv2.aruco.detectMarkers, with subpixel corner refinement."""
+    dictionary = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, dictionary_name))
+    params = cv2.aruco.DetectorParameters_create()
+    # subpixel corners: the orientation accuracy of a small marker depends on them
+    params.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
+    return dictionary, params
+
+
+def find_marker_corners(gray, detector, marker_id):
+    """4 image corners (TL, TR, BR, BL) of the marker with `marker_id`, or None when it is not visible."""
+    dictionary, params = detector
+    corners, ids, _ = cv2.aruco.detectMarkers(gray, dictionary, parameters=params)
+    if ids is None:
         return None
-    return qr_pose_from_corners(corners, K, dist, side, max_reproj_px)
+    for c, i in zip(corners, ids.ravel()):
+        if i == marker_id:
+            return c.reshape(4, 2)
+    return None
 
 
-def qr_pose_from_corners(corners, K, dist, side, max_reproj_px=2.0):
-    """Code pose in the camera frame from its 4 image corners (TL, TR, BR, BL), or None when implausible."""
-    # 2. 3D corners (known code size) + 2D corners + camera intrinsics -> pose of the code relative to the camera
-    n, rvecs, tvecs, errs = cv2.solvePnPGeneric(qr_object_points(side), corners.reshape(4, 2).astype(float),
-                                                K, dist, flags=cv2.SOLVEPNP_IPPE_SQUARE)
+def detect_marker_pose(gray, K, dist, side, detector, marker_id, max_reproj_px=2.0):
+    """Marker pose in the camera frame as (position, Rotation), or None when no plausible marker is found."""
+    # 1. find the 4 outer corners of the marker in the image (pixels)
+    corners = find_marker_corners(gray, detector, marker_id)
+    if corners is None:
+        return None
+    return marker_pose_from_corners(corners, K, dist, side, max_reproj_px)
+
+
+def marker_pose_from_corners(corners, K, dist, side, max_reproj_px=2.0):
+    """Marker pose in the camera frame from its 4 image corners (TL, TR, BR, BL), or None when implausible."""
+    # 2. 3D corners (known marker size) + 2D corners + camera intrinsics -> pose of the marker relative to the camera
+    obj, img = marker_object_points(side), corners.reshape(4, 2).astype(float)
+    n, rvecs, tvecs, _ = cv2.solvePnPGeneric(obj, img, K, dist, flags=cv2.SOLVEPNP_IPPE_SQUARE)
     # 3. IPPE returns two mirror solutions (best first); keep one that reprojects well and faces the camera
-    for rvec, tvec, err in zip(rvecs, tvecs, np.ravel(errs)):
+    for rvec, tvec in zip(rvecs, tvecs):
+        if not np.all(np.isfinite(rvec)):
+            continue  # IPPE sometimes returns NaN for the second solution
+        # IPPE alone is ~9 deg off at exactly frontal views; Levenberg-Marquardt refinement removes that
+        rvec, tvec = cv2.solvePnPRefineLM(obj, img, K, dist, rvec.copy(), tvec.copy())
+        proj, _ = cv2.projectPoints(obj, rvec, tvec, K, dist)
+        err = np.sqrt(np.mean(np.sum((proj.reshape(4, 2) - img) ** 2, axis=1)))  # RMS, as solvePnPGeneric
         r = Rotation.from_rotvec(rvec.ravel())
-        # r.as_matrix()[2, 2] is the z component of the code normal in the camera frame; < 0 = normal towards camera
+        # r.as_matrix()[2, 2] is the z component of the marker normal in the camera frame; < 0 = towards camera
         if err < max_reproj_px and r.as_matrix()[2, 2] < 0:
             return tvec.ravel(), r
     return None

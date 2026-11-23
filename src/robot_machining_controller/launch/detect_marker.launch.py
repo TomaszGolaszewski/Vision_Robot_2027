@@ -2,20 +2,42 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 PKG = 'robot_machining_controller'
+# the USB camera in use; its /dev/videoN number changes on every replug, this path does not
+CAMERA = '/dev/v4l/by-id/usb-FLH-201016_Integrated_Camera-video-index0'
+
+
+def camera(context):
+    """USB camera -> /image_raw (OpenCV VideoCapture inside image_tools)."""
+    device_id = LaunchConfiguration('device_id').perform(context)
+    if device_id == 'auto':
+        # no silent fallback to another camera: with the robot its mount TF would be wrong
+        if not os.path.exists(CAMERA):
+            raise RuntimeError(f'USB camera not connected ({CAMERA}); pass device_id:=N to use /dev/videoN')
+        device_id = os.path.realpath(CAMERA).removeprefix('/dev/video')
+    arg = LaunchConfiguration
+    return [Node(package='image_tools', executable='cam2image', name='camera',
+                 remappings=[('image', 'image_raw')],
+                 parameters=[{'device_id': int(device_id), 'width': arg('width'), 'height': arg('height'),
+                              'frequency': 30.0, 'reliability': 'best_effort',
+                              'frame_id': 'camera_optical_frame'}])]
 
 
 def generate_launch_description():
-    """QR detection only: USB camera + WorkpiecePositionDetector, optionally without the robot."""
+    """USB camera + camera mount TF + WorkpiecePositionDetector; without the robot by default (fake_robot).
+
+    Also included by follow_marker.launch.py with fake_robot:=false.
+    """
     params = os.path.join(get_package_share_directory(PKG), 'config', 'params.yaml')
     arg = LaunchConfiguration
     return LaunchDescription([
-        DeclareLaunchArgument('device_id', default_value='0', description='camera index, /dev/videoN'),
+        DeclareLaunchArgument('device_id', default_value='auto',
+                              description='N of /dev/videoN; auto = the USB camera, found by its by-id path'),
         DeclareLaunchArgument('width', default_value='640'),
         DeclareLaunchArgument('height', default_value='480'),
         # DPMM is valid only for the camera and resolution it was measured with
@@ -25,15 +47,10 @@ def generate_launch_description():
         DeclareLaunchArgument('fake_robot', default_value='true',
                               description='publish a fixed robot pose instead of the robot driver TF'),
 
-        # USB camera -> /image_raw (OpenCV VideoCapture inside image_tools)
-        Node(package='image_tools', executable='cam2image', name='camera',
-             remappings=[('image', 'image_raw')],
-             parameters=[{'device_id': arg('device_id'), 'width': arg('width'), 'height': arg('height'),
-                          'frequency': 30.0, 'reliability': 'best_effort',
-                          'frame_id': 'camera_optical_frame'}]),
+        OpaqueFunction(function=camera),
 
         # camera position on the tool: static transform tool0 -> camera_optical_frame
-        # shortcut: placeholder camera mount (same as follow_qr.launch.py), replace with hand-eye calibration
+        # shortcut: placeholder camera mount, replace with the hand-eye calibration result
         Node(package='tf2_ros', executable='static_transform_publisher', name='camera_mount_tf',
              arguments=['--z', '0.1', '--frame-id', 'tool0', '--child-frame-id', 'camera_optical_frame']),
 

@@ -2,7 +2,9 @@
 workpiece_position_detector:
   ros__parameters:
     base_frame: base_link
-    qr_side_m: 0.05
+    marker_side_m: 0.1         # outer edge of the black border
+    aruco_dictionary: DICT_4X4_50
+    marker_id: 0               # other ids are ignored
     # fallback intrinsics until a calibrated camera_info is published
     dpmm: 210.0                # px per 100 mm at nominal_distance_mm
     nominal_distance_mm: 440.0

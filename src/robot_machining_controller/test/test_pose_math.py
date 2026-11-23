@@ -4,7 +4,8 @@ import pytest
 from scipy.spatial.transform import Rotation
 
 from robot_machining_controller.pose_math import (FACING, PoseKalman, camera_matrix_from_dpmm, camera_target,
-                                                  detect_qr_pose, limit_step, qr_object_points)
+                                                  aruco_detector, detect_marker_pose, limit_step,
+                                                  marker_object_points, marker_pose_from_corners)
 
 SIDE = 0.05
 # arbitrary tilted code pose in the base frame
@@ -45,44 +46,68 @@ def test_unknown_mode():
         camera_target(CODE_P, CODE_R, 0.44, 'zigzag')
 
 
-def render_qr(K, p, r, size=(1280, 960)):
-    code = cv2.QRCodeEncoder.create().encode('VR2027')
-    ys, xs = np.where(code == 0)
-    code = code[ys.min():ys.max() + 1, xs.min():xs.max() + 1]  # crop quiet zone: side = finder edges
-    code = cv2.resize(code, None, fx=20, fy=20, interpolation=cv2.INTER_NEAREST)
-    n = code.shape[0]
+DETECTOR = aruco_detector('DICT_4X4_50')
+MARKER_ID = 7
+
+
+def render_marker(K, p, r, size=(1280, 960), marker_id=MARKER_ID, side=SIDE):
+    marker = cv2.aruco.drawMarker(DETECTOR[0], marker_id, 400)  # side = outer edge of the black border
+    n = marker.shape[0]
     src = np.float32([[0, 0], [n, 0], [n, n], [0, n]]) - 0.5  # pixel centres sit at integers
-    dst, _ = cv2.projectPoints(qr_object_points(SIDE), r.as_rotvec(), p, K, None)
+    dst, _ = cv2.projectPoints(marker_object_points(side), r.as_rotvec(), p, K, None)
     H = cv2.getPerspectiveTransform(src, dst.reshape(4, 2).astype(np.float32))
-    return cv2.warpPerspective(code, H, size, flags=cv2.INTER_AREA, borderValue=255)
+    return cv2.warpPerspective(marker, H, size, flags=cv2.INTER_AREA, borderValue=255)
 
 
-@pytest.mark.parametrize('tilt_deg, yaw_deg', [
-    (0, 10), (25, 10),
-    # QRCodeDetector corners are ~1 px off (not subpixel): at 105 px code size that is 7-14 deg of orientation
-    pytest.param(0, 45, marks=pytest.mark.xfail(strict=True, reason='QR corner accuracy, see README')),
-    pytest.param(0, 135, marks=pytest.mark.xfail(strict=True, reason='QR corner accuracy, see README')),
+FRONTAL_640 = pytest.mark.xfail(strict=True, reason='50 mm marker is only 52 px at 640x480, see README')
+
+
+# frontal views (yaw 0/45/135) were the failing cases with QRCodeDetector corners
+@pytest.mark.parametrize('size, dpmm, tilt_deg, yaw_deg', [
+    *[((1280, 960), 210, t, y) for t, y in [(0, 0), (0, 10), (25, 10), (0, 45), (0, 135), (40, -60)]],
+    # 0.1 px corner noise on a 52 px marker: near-frontal orientation is ambiguous by 5-7 deg
+    pytest.param((640, 480), 105, 0, 0, marks=FRONTAL_640),
+    pytest.param((640, 480), 105, 0, 10, marks=FRONTAL_640),
+    *[((640, 480), 105, t, y) for t, y in [(25, 10), (0, 45), (0, 135), (40, -60)]],
 ])
-def test_detect_qr_pose_synthetic(tilt_deg, yaw_deg):
-    K = camera_matrix_from_dpmm(1280, 960, 210, 440)
+def test_detect_marker_pose_synthetic(size, dpmm, tilt_deg, yaw_deg):
+    K = camera_matrix_from_dpmm(*size, dpmm, 440)
     p = np.array([0.03, -0.02, 0.44])
     r = FACING * Rotation.from_euler('yz', [tilt_deg, yaw_deg], degrees=True)
-    result = detect_qr_pose(render_qr(K, p, r), K, None, SIDE, cv2.QRCodeDetector())
+    result = detect_marker_pose(render_marker(K, p, r, size), K, None, SIDE, DETECTOR, MARKER_ID)
     assert result is not None
-    assert np.linalg.norm(result[0] - p) < 0.003
+    assert np.linalg.norm(result[0] - p) < 0.003 * 210 / dpmm  # half the px per mm -> twice the depth error
     assert angle_deg(result[1], r) < 3.0
 
 
-def test_detect_rejects_implausible_solution():
-    # axis-aligned frontal view: IPPE fails here (74 px reprojection, flipped normal); must not be published
+@pytest.mark.parametrize('tilt_deg, yaw_deg', [(0, 0), (0, 10), (0, 45)])
+def test_100mm_marker_at_640x480_frontal(tilt_deg, yaw_deg):
+    # the marker actually used with the 640x480 camera: 105 px, so near-frontal views are accurate again
+    K = camera_matrix_from_dpmm(640, 480, 105, 440)
+    p = np.array([0.03, -0.02, 0.44])
+    r = FACING * Rotation.from_euler('yz', [tilt_deg, yaw_deg], degrees=True)
+    result = detect_marker_pose(render_marker(K, p, r, (640, 480), side=0.1), K, None, 0.1, DETECTOR, MARKER_ID)
+    assert result is not None
+    assert np.linalg.norm(result[0] - p) < 0.003
+    assert angle_deg(result[1], r) < 1.0
+
+
+def test_detect_ignores_other_marker_id():
     K = camera_matrix_from_dpmm(1280, 960, 210, 440)
-    img = render_qr(K, np.array([0.03, 0, 0.44]), FACING)
-    assert detect_qr_pose(img, K, None, SIDE, cv2.QRCodeDetector()) is None
+    img = render_marker(K, np.array([0.03, 0, 0.44]), FACING, marker_id=MARKER_ID + 1)
+    assert detect_marker_pose(img, K, None, SIDE, DETECTOR, MARKER_ID) is None
+
+
+def test_rejects_implausible_solution():
+    # corners in mirrored order (TL, BL, BR, TR): the only fitting pose has its normal facing away from the camera
+    K = camera_matrix_from_dpmm(1280, 960, 210, 440)
+    dst, _ = cv2.projectPoints(marker_object_points(SIDE), FACING.as_rotvec(), np.array([0.03, 0, 0.44]), K, None)
+    assert marker_pose_from_corners(dst.reshape(4, 2)[[0, 3, 2, 1]], K, None, SIDE) is None
 
 
 def test_no_code_returns_none():
     K = camera_matrix_from_dpmm(640, 480, 210, 440)
-    assert detect_qr_pose(np.full((480, 640), 255, np.uint8), K, None, SIDE, cv2.QRCodeDetector()) is None
+    assert detect_marker_pose(np.full((480, 640), 255, np.uint8), K, None, SIDE, DETECTOR, MARKER_ID) is None
 
 
 def test_kalman_smooths_noise_and_handles_quaternion_sign():
