@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.4] - 2026-11-23
+
+### Added
+
+- Added the `calibrate_camera` script for camera calibration using a ChArUco board.
+- Added `config/camera_calibration.yaml` with USB camera intrinsics.
+- Added the `camera_calibration_file` parameter to `workpiece_position_detector`.
+
 ## [0.1.3] - 2026-11-23
 
 ### Added

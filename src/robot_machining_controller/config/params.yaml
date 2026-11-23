@@ -5,7 +5,9 @@ workpiece_position_detector:
     marker_side_m: 0.1         # outer edge of the black border
     aruco_dictionary: DICT_4X4_50
     marker_id: 0               # other ids are ignored
-    # fallback intrinsics until a calibrated camera_info is published
+    # ROS camera_info YAML from calibrate_camera; the launch files set config/camera_calibration.yaml if it exists
+    camera_calibration_file: ''
+    # fallback intrinsics when there is no calibration file and no calibrated camera_info
     dpmm: 210.0                # px per 100 mm at nominal_distance_mm
     nominal_distance_mm: 440.0
     show_image: false          # cv2.imshow window; the same picture is on topic image_debug

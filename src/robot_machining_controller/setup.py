@@ -26,6 +26,7 @@ setup(
             'workpiece_position_detector = robot_machining_controller.workpiece_position_detector:main',
             'trajectory_generator = robot_machining_controller.trajectory_generator:main',
             'robot_controller = robot_machining_controller.robot_controller:main',
+            'calibrate_camera = robot_machining_controller.calibrate_camera:main',
         ],
     },
 )

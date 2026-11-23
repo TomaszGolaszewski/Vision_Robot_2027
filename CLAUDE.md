@@ -39,7 +39,9 @@ image_raw, camera_info -> workpiece_position_detector -> workpiece_position -> t
   Put new math here with a test; keep nodes thin.
 - `workpiece_position_detector`: `cv2.aruco.detectMarkers` (subpixel corners, one `marker_id`) +
   `solvePnPGeneric(IPPE_SQUARE)` + `solvePnPRefineLM`, transforms the code pose to
-  `base_link` with TF **at the image stamp** (robot motion compensation). Intrinsics from `camera_info`, else from DPMM.
+  `base_link` with TF **at the image stamp** (robot motion compensation). Intrinsics from `camera_calibration_file`
+  (`config/camera_calibration.yaml`, written by `calibrate_camera`) or `camera_info`, else from DPMM. Images of
+  another resolution than the calibrated one are refused.
 - `trajectory_generator`: OpenCV Kalman (state: position, velocity, quaternion), `mode` = `direct` | `circle`
   (switchable live via `ros2 param set`), stops publishing after `lost_timeout_s`.
   Publishes the desired **tool0** pose (camera target composed with the static mount TF).
@@ -67,6 +69,13 @@ Parameter defaults live in two places: `declare_parameter(...)` in the node and 
 - Synthetic test images: pixel centres are at integer coordinates (`src - 0.5` in `render_marker`). Without that,
   pose tests are off by a half-pixel bias.
 - Detection takes ~2.5 ms at 640x480, ~11 ms at 1280x960; the image subscription has depth 1 (newest frame only).
+- Calibration board: ChArUco 7x5 squares, 25 mm square, 18 mm marker, `DICT_6X6_250` (ids 0-16, top-left square black).
+  OpenCV 4.6 board frame: origin top-left, x right, y down (same as `board.draw`).
+- USB camera intrinsics (`config/camera_calibration.yaml`, 2026-11-23, 25 views, RMS 0.44 px): fx ~597 px, strong barrel
+  distortion (k1 ~-0.36, ~60 px in the image corners; consistent across calibrations, so real). Split-half check:
+  fx +-3 %, cx +-30 px; more strongly tilted views (> 30 deg) would tighten it. The DPMM fallback (f = 924) is ~55 % off.
+- Camera calibration uses `CALIB_FIX_K3`; with a small board k3 overfits. Views in the image corners are essential:
+  without them the synthetic test had 18 px distortion error in the corners (0.4 px with them).
 - DPMM (210 px / 100 mm at 440 mm) belongs to the target camera at its resolution. It is wrong for the webcam or at
   another resolution. Correction: `dpmm_new = dpmm * true_distance / measured_z`.
 

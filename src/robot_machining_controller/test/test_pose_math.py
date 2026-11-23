@@ -3,9 +3,11 @@ import numpy as np
 import pytest
 from scipy.spatial.transform import Rotation
 
-from robot_machining_controller.pose_math import (FACING, PoseKalman, camera_matrix_from_dpmm, camera_target,
-                                                  aruco_detector, detect_marker_pose, limit_step,
-                                                  marker_object_points, marker_pose_from_corners)
+from robot_machining_controller.pose_math import (FACING, PoseKalman, aruco_detector, calibrate_charuco_robust,
+                                                  camera_matrix_from_dpmm, camera_target, charuco_board,
+                                                  detect_marker_pose, find_charuco_corners, limit_step,
+                                                  load_camera_info_yaml, marker_object_points,
+                                                  marker_pose_from_corners, save_camera_info_yaml)
 
 SIDE = 0.05
 # arbitrary tilted code pose in the base frame
@@ -108,6 +110,58 @@ def test_rejects_implausible_solution():
 def test_no_code_returns_none():
     K = camera_matrix_from_dpmm(640, 480, 210, 440)
     assert detect_marker_pose(np.full((480, 640), 255, np.uint8), K, None, SIDE, DETECTOR, MARKER_ID) is None
+
+
+BOARD = charuco_board(7, 5, 0.025, 0.018, 'DICT_6X6_250')  # the printed board
+
+
+def render_board(K, rotvec, tvec, size=(640, 480), px_per_m=10000):
+    """Board seen by camera K; board frame (OpenCV 4.6): origin top-left, x right, y down, z away from the camera."""
+    w, h = 7 * 0.025, 5 * 0.025
+    flat = BOARD.draw((round(w * px_per_m), round(h * px_per_m)))  # drawn image covers exactly the board
+    src = np.float32([[0, 0], [w, 0], [w, h], [0, h]]) * px_per_m - 0.5  # pixel centres sit at integers
+    dst, _ = cv2.projectPoints(np.float32([[0, 0, 0], [w, 0, 0], [w, h, 0], [0, h, 0]]), rotvec, tvec, K, None)
+    H = cv2.getPerspectiveTransform(src, dst.reshape(4, 2).astype(np.float32))
+    return cv2.warpPerspective(flat, H, size, flags=cv2.INTER_AREA, borderValue=255)
+
+
+def test_charuco_calibration_recovers_intrinsics():
+    K = np.array([[600.0, 0, 330], [0, 600, 235], [0, 0, 1]])  # a different camera than the DPMM default
+    views = []
+    # (tilt about x, tilt about y [deg], board centre direction x/z, y/z): tilted views in the centre and the image
+    # corners; without the corner views the distortion is unconstrained there (18 px error in the synthetic test)
+    for i, (ax, ay, cx, cy) in enumerate([(0, 0, 0, 0), (30, 0, 0, 0), (-30, 0, 0, 0), (0, 30, 0, 0), (0, -30, 0, 0),
+                                          (25, 25, 0, 0), (20, 10, 0.3, 0.2), (-20, 10, -0.3, 0.2),
+                                          (10, -20, 0.3, -0.2), (-10, -20, -0.3, -0.2), (15, 15, 0.3, 0),
+                                          (-15, 15, -0.3, 0)]):
+        r = Rotation.from_euler('xyz', [ax, ay, 5 * i], degrees=True)
+        t = np.array([cx, cy, 1]) * 0.3 - r.apply([0.0875, 0.0625, 0])  # board centre 30 cm away
+        view = find_charuco_corners(render_board(K, r.as_rotvec(), t), BOARD)
+        assert view is not None, i
+        views.append(view)
+    # one blurred-like view: corners shifted by noise must be dropped as an outlier
+    noisy = views[0][0] + np.random.default_rng(0).normal(0, 3, views[0][0].shape).astype(np.float32)
+    K_est, dist, rms, dropped = calibrate_charuco_robust(views + [(noisy, views[0][1])], BOARD, (640, 480))
+    assert dropped == [len(views)]
+    assert rms < 0.5
+    assert abs(K_est[0, 0] - 600) < 6 and abs(K_est[1, 1] - 600) < 6  # focal length within 1 %
+    assert abs(K_est[0, 2] - 330) < 5 and abs(K_est[1, 2] - 235) < 5
+    # no distortion in the synthetic images: the estimated one may move no image point by more than 1 px
+    grid = np.array([[x, y] for x in np.linspace(0, 639, 9) for y in np.linspace(0, 479, 7)], np.float32)
+    undistorted = cv2.undistortPoints(grid.reshape(-1, 1, 2), K_est, dist, P=K_est).reshape(-1, 2)
+    assert np.abs(undistorted - grid).max() < 1.0
+
+
+def test_no_board_returns_none():
+    assert find_charuco_corners(np.full((480, 640), 255, np.uint8), BOARD) is None
+
+
+def test_camera_info_yaml_round_trip(tmp_path):
+    K = np.array([[600.0, 0, 330], [0, 601, 235], [0, 0, 1]])
+    dist = np.array([0.1, -0.2, 0.001, 0.002, 0.05])
+    save_camera_info_yaml(tmp_path / 'cam.yaml', K, dist, (640, 480))
+    K2, dist2, size = load_camera_info_yaml(tmp_path / 'cam.yaml')
+    assert np.allclose(K2, K) and np.allclose(dist2, dist) and size == (640, 480)
 
 
 def test_kalman_smooths_noise_and_handles_quaternion_sign():

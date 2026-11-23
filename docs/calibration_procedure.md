@@ -18,24 +18,35 @@ Safety: steps 5 and 6 move the real robot. Use T1 at low speed. Each motion step
 ## 1. Camera and driver
 
 - Write down the camera model, resolution, frame rate and interface (USB / GigE).
-- Choose a ROS 2 driver that publishes `image_raw` and `camera_info`. `image_tools/cam2image` is only good for the dev webcam.
+- Current camera: USB `0c45:64ab` (FLH-201016), 640x480 @ 30 fps via `image_tools/cam2image`, selected by its
+  `/dev/v4l/by-id/` path in `launch/detect_marker.launch.py`. It publishes no `camera_info`; intrinsics come from a file (step 2).
 - Set the image `frame_id` to `camera_optical_frame`.
-- Check that the detection time at the chosen resolution fits the frame rate. For example, 1280x960 takes about 65 ms.
+- Check that the detection time at the chosen resolution fits the frame rate (about 2.5 ms at 640x480).
 
 ## 2. Camera intrinsics
 
 Prepare:
-- A printed chessboard or ChArUco board on a rigid, flat backing.
-- The measured square size in mm. Measure it on the print, not in the PDF.
-- `sudo apt install ros-jazzy-camera-calibration`
+- The ChArUco board: 7x5 squares, square 25 mm, marker 18 mm, `DICT_6X6_250`, on a rigid, flat backing.
+  Measure the square on the print, not in the PDF; pass other boards with `--squares --square --marker --dictionary`.
+- Stop `detect_marker`/`follow_marker` first: the script opens the camera itself.
 
 Procedure:
-1. Run `ros2 run camera_calibration cameracalibrator --size <cols>x<rows> --square <m> image:=/image_raw camera:=/camera`.
-2. Move the board across the whole image, including the corners, at different tilts and distances, until all bars are green. Then press Calibrate and Save.
-3. Load the result into the camera driver, so that `camera_info` carries K and D. The detector uses `camera_info` before the DPMM fallback.
-4. Check the reprojection error. It should be below about 0.5 px.
+1. From the repo root run
+   `ros2 run robot_machining_controller calibrate_camera --output src/robot_machining_controller/config/camera_calibration.yaml --save-dir ~/calib_views`.
+   `--from-dir ~/calib_views` recalibrates from the saved PNGs later, without the camera.
+2. Save (SPACE) 20-30 views: board in the centre and in **all four image corners and edges**, tilted up to about 45 deg
+   in different directions, at different distances. Keep it still when saving (motion blur). Blue dots show the
+   coverage so far. Without views in the image corners the distortion there is a guess (18 px error in a synthetic test).
+3. Press `c`. Views with an error above 2x the median are dropped and listed. The RMS should be below about 0.5 px;
+   above 1 px the file is not written. Causes seen: a paper sheet that bends (glue it to a rigid board), motion blur
+   (auto exposure is about 16 ms indoors: hold still or add light). The camera has fixed focus.
+4. `colcon build` installs the file (deleting it from `src` does not remove the installed copy: delete both); the launch files pass it to the detector (`camera_calibration_file`). The detector
+   refuses images of another resolution than the calibrated one.
+5. Check: marker at a distance measured with a tape, `ros2 topic echo /workpiece_position` with `detect_marker`
+   (`z` = distance). Expect an error below about 1 %.
 
-Result: the camera calibration file, stored with the camera driver config.
+Result: `config/camera_calibration.yaml` (ROS camera_info format), committed with the code. Redo it after any change of
+the camera, lens, focus or resolution.
 Fallback only: `dpmm`, `nominal_distance_mm` in `config/params.yaml`. Correct them with `dpmm_new = dpmm * true_distance / measured_z`.
 
 ## 3. Marker / board

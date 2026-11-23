@@ -14,8 +14,8 @@ from sensor_msgs.msg import CameraInfo, Image
 from tf2_ros import Buffer, TransformException, TransformListener
 
 from robot_machining_controller.pose_math import (aruco_detector, camera_matrix_from_dpmm, compose,
-                                                  find_marker_corners, from_transform, marker_pose_from_corners,
-                                                  to_pose)
+                                                  find_marker_corners, from_transform, load_camera_info_yaml,
+                                                  marker_pose_from_corners, to_pose)
 
 
 class WorkpiecePositionDetector(Node):
@@ -37,10 +37,18 @@ class WorkpiecePositionDetector(Node):
         self.dpmm = self.declare_parameter('dpmm', 210.0).value                         # px per 100 mm ...
         self.nominal_distance_mm = self.declare_parameter('nominal_distance_mm', 440.0).value  # ... at this distance
         self.show_image = self.declare_parameter('show_image', False).value             # cv2.imshow window
+        # ROS camera_info YAML from calibrate_camera; '' = use camera_info topic or the DPMM fallback
+        calibration_file = self.declare_parameter('camera_calibration_file', '').value
 
-        # --- camera intrinsics: set from camera_info when available, otherwise estimated from dpmm ---
+        # --- camera intrinsics: from the calibration file or camera_info, otherwise estimated from dpmm ---
         self.K = None      # 3x3 camera matrix
         self.dist = None   # lens distortion coefficients
+        self.calibrated_size = None  # (width, height) the intrinsics belong to
+        if calibration_file:
+            self.K, self.dist, self.calibrated_size = load_camera_info_yaml(calibration_file)
+            self.get_logger().info(f'camera intrinsics from {calibration_file}')
+        else:
+            self.get_logger().warn('no camera_calibration_file: DPMM intrinsics until a calibrated camera_info arrives')
 
         # --- tools: ROS image <-> OpenCV conversion, ArUco detector, TF buffer ---
         self.bridge = CvBridge()
@@ -66,11 +74,17 @@ class WorkpiecePositionDetector(Node):
         if msg.k[0] > 0:
             self.K = np.array(msg.k).reshape(3, 3)
             self.dist = np.array(msg.d) if len(msg.d) else None
+            self.calibrated_size = (msg.width, msg.height)
 
     def image_callback(self, msg):
         # ROS image -> grayscale OpenCV image (marker detection does not need colour)
         gray = self.bridge.imgmsg_to_cv2(msg, 'mono8')
         K, dist = self.K, self.dist
+        if self.calibrated_size and gray.shape[1::-1] != tuple(self.calibrated_size):
+            # intrinsics of another resolution would give a wrong pose: publish nothing
+            self.get_logger().error(f'image {gray.shape[1]}x{gray.shape[0]} but camera calibrated at '
+                                    f'{self.calibrated_size[0]}x{self.calibrated_size[1]}', throttle_duration_sec=5.0)
+            return
         if K is None:
             # shortcut: nominal pinhole from DPMM, no distortion; publish a calibrated camera_info for real accuracy
             K = camera_matrix_from_dpmm(gray.shape[1], gray.shape[0], self.dpmm, self.nominal_distance_mm)

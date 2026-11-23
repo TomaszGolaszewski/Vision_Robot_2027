@@ -8,6 +8,7 @@ Conventions used everywhere:
 """
 import cv2
 import numpy as np
+import yaml
 from geometry_msgs.msg import Pose
 from scipy.spatial.transform import Rotation
 
@@ -24,6 +25,68 @@ def camera_matrix_from_dpmm(width, height, dpmm, distance_mm):
     f = dpmm / 100.0 * distance_mm
     # principal point assumed in the image centre (no calibration available yet)
     return np.array([[f, 0, (width - 1) / 2], [0, f, (height - 1) / 2], [0, 0, 1]], dtype=float)
+
+
+def charuco_board(squares_x, squares_y, square, marker, dictionary_name):
+    """ChArUco calibration board; OpenCV 4.6 board frame: origin top-left, x right, y down (as the drawn image)."""
+    dictionary = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, dictionary_name))
+    return cv2.aruco.CharucoBoard_create(squares_x, squares_y, square, marker, dictionary)
+
+
+def find_charuco_corners(gray, board, min_corners=6):
+    """(corners (N,1,2), ids (N,1)) of the inner chessboard corners, or None when fewer than min_corners are seen."""
+    markers, ids, _ = cv2.aruco.detectMarkers(gray, board.dictionary)
+    if ids is None:
+        return None
+    # chessboard corners between the found markers, subpixel refined inside interpolateCornersCharuco
+    n, corners, corner_ids = cv2.aruco.interpolateCornersCharuco(markers, ids, gray, board)
+    return (corners, corner_ids) if n >= min_corners else None
+
+
+def calibrate_charuco(views, board, image_size):
+    """Intrinsics from ChArUco views [(corners, ids), ...]: (K 3x3, dist (5,), RMS [px], per-view RMS [px])."""
+    # k3 = 0: with a small board k3 overfits (synthetic test: 18 px error in the image corners), fine for a normal lens
+    # shortcut: k1, k2, p1, p2 only, switch to CALIB_RATIONAL_MODEL if a wide-angle lens is used
+    rms, K, dist, _, _, _, _, per_view = cv2.aruco.calibrateCameraCharucoExtended(
+        [v[0] for v in views], [v[1] for v in views], board, image_size, None, None, flags=cv2.CALIB_FIX_K3)
+    return K, dist.ravel(), rms, per_view.ravel()
+
+
+def calibrate_charuco_robust(views, board, image_size, outlier_factor=2.0, keep_below_px=0.5):
+    """calibrate_charuco, then once more without the views whose error exceeds outlier_factor * median
+    (views below keep_below_px are always kept).
+
+    Returns (K, dist, RMS, indices of the dropped views); hand-held boards give a few blurred views.
+    """
+    K, dist, rms, per_view = calibrate_charuco(views, board, image_size)
+    limit = max(outlier_factor * np.median(per_view), keep_below_px)
+    dropped = [i for i, e in enumerate(per_view) if e > limit]
+    if dropped:
+        K, dist, rms, _ = calibrate_charuco([v for i, v in enumerate(views) if i not in dropped], board, image_size)
+    return K, dist, rms, dropped
+
+
+def save_camera_info_yaml(path, K, dist, image_size, camera_name='camera'):
+    """Write intrinsics in the ROS camera_info YAML format (camera_calibration_parsers, plumb_bob)."""
+    w, h = image_size
+    P = np.hstack([K, np.zeros((3, 1))])  # no rectification: P = [K | 0]
+    data = {'image_width': int(w), 'image_height': int(h), 'camera_name': camera_name,
+            'camera_matrix': {'rows': 3, 'cols': 3, 'data': [float(v) for v in K.ravel()]},
+            'distortion_model': 'plumb_bob',
+            'distortion_coefficients': {'rows': 1, 'cols': len(dist), 'data': [float(v) for v in dist]},
+            'rectification_matrix': {'rows': 3, 'cols': 3, 'data': [float(v) for v in np.eye(3).ravel()]},
+            'projection_matrix': {'rows': 3, 'cols': 4, 'data': [float(v) for v in P.ravel()]}}
+    with open(path, 'w') as f:
+        yaml.safe_dump(data, f, sort_keys=False)
+
+
+def load_camera_info_yaml(path):
+    """(K 3x3, dist, (width, height)) from a ROS camera_info YAML file."""
+    with open(path) as f:
+        data = yaml.safe_load(f)
+    K = np.array(data['camera_matrix']['data'], dtype=float).reshape(3, 3)
+    dist = np.array(data['distortion_coefficients']['data'], dtype=float)
+    return K, dist, (data['image_width'], data['image_height'])
 
 
 def marker_object_points(side):

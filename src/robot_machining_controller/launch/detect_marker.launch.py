@@ -34,6 +34,8 @@ def generate_launch_description():
     Also included by follow_marker.launch.py with fake_robot:=false.
     """
     params = os.path.join(get_package_share_directory(PKG), 'config', 'params.yaml')
+    # written by calibrate_camera into src/.../config, installed by colcon build
+    calibration = os.path.join(get_package_share_directory(PKG), 'config', 'camera_calibration.yaml')
     arg = LaunchConfiguration
     return LaunchDescription([
         DeclareLaunchArgument('device_id', default_value='auto',
@@ -42,6 +44,8 @@ def generate_launch_description():
         DeclareLaunchArgument('height', default_value='480'),
         # DPMM is valid only for the camera and resolution it was measured with
         DeclareLaunchArgument('dpmm', default_value='210.0', description='px per 100 mm at nominal distance'),
+        DeclareLaunchArgument('camera_calibration_file', default_value=calibration if os.path.exists(calibration) else '',
+                              description="camera intrinsics YAML; '' = DPMM fallback"),
         DeclareLaunchArgument('show_image', default_value='false',
                               description='cv2.imshow window with the detection (also on topic image_debug)'),
         DeclareLaunchArgument('fake_robot', default_value='true',
@@ -61,5 +65,7 @@ def generate_launch_description():
              arguments=['--z', '-0.1', '--frame-id', 'base_link', '--child-frame-id', 'tool0']),
 
         # image -> code pose in base_link (topic workpiece_position)
-        Node(package=PKG, executable='workpiece_position_detector', parameters=[params, {'dpmm': arg('dpmm'), 'show_image': arg('show_image')}]),
+        Node(package=PKG, executable='workpiece_position_detector',
+             parameters=[params, {'dpmm': arg('dpmm'), 'show_image': arg('show_image'),
+                                  'camera_calibration_file': arg('camera_calibration_file')}]),
     ])
