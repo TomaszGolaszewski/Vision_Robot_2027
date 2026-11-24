@@ -20,7 +20,7 @@ All poses are `geometry_msgs/PoseStamped` in `base_link` (m, quaternion).
 
 | Node | Main parameters |
 |---|---|
-| `workpiece_position_detector` | `marker_side_m` 0.1, `aruco_dictionary` DICT_4X4_50, `marker_id` 0; `camera_calibration_file` (set by the launch files to `config/camera_calibration.yaml` if present); `dpmm` 210 / `nominal_distance_mm` 440 build the fallback intrinsics (f = 924 px) without it |
+| `workpiece_position_detector` | `marker_side_m` 0.1, `aruco_dictionary` DICT_4X4_50, `marker_id` 0; `camera_calibration_file` (set by the launch files to `config/camera_calibration_<camera>.yaml` if present); `dpmm` 210 / `nominal_distance_mm` 440 build the fallback intrinsics (f = 924 px) without it |
 | `trajectory_generator` | `mode` `direct` (camera faces the code at `standoff_m` 0.44) or `circle` (`radius_m` 0.05 in the code plane, `period_s`); `lost_timeout_s`; `kalman_*` noises |
 | `robot_controller` | `workspace_min/max`, `max_linear_speed` 0.1 m/s, `max_angular_speed`, `command_timeout_s`, `output_topic` |
 
@@ -37,17 +37,22 @@ ros2 launch robot_machining_controller follow_marker.launch.py mode:=circle  # c
 ros2 param set /trajectory_generator mode direct   # switch path live
 
 # marker detection only (USB camera, no robot): workpiece_position = marker pose relative to the camera
-# device_id:=auto (default) = the USB camera, found by its /dev/v4l/by-id/ name; error if unplugged; device_id:=N = /dev/videoN
+# camera:=201016 (default) | 200917 = USB camera unit (FLH id in /dev/v4l/by-id/), selects config/camera_calibration_<camera>.yaml
+# device_id:=auto (default) = that unit, found by its /dev/v4l/by-id/ name; error if unplugged; device_id:=N = /dev/videoN
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
 ros2 launch robot_machining_controller detect_marker.launch.py width:=640 height:=480 dpmm:=210.0
 ros2 topic echo /workpiece_position
 
 # visualization: green outline + marker axes = pose accepted, red outline = pose rejected (implausible)
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
 ros2 launch robot_machining_controller detect_marker.launch.py show_image:=true  # cv2.imshow window (needs a display)
 ros2 run rqt_image_view rqt_image_view /image_debug                          # or view the debug topic
 
 # camera intrinsics with the ChArUco board (7x5, 25/18 mm, DICT_6X6_250), see docs/calibration_procedure.md step 2;
-# then colcon build: the launch files load config/camera_calibration.yaml automatically
-ros2 run robot_machining_controller calibrate_camera --output src/robot_machining_controller/config/camera_calibration.yaml
+# then colcon build: the launch files load config/camera_calibration_<camera>.yaml automatically
+ros2 run robot_machining_controller calibrate_camera --output src/robot_machining_controller/config/camera_calibration_201016.yaml
 
 # printable marker (id 0, DICT_4X4_50); print without scaling, then measure the outer black edge -> marker_side_m
 python3 -c "import cv2; cv2.imwrite('marker_0.png', cv2.copyMakeBorder(cv2.aruco.drawMarker(cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50), 0, 600), 100, 100, 100, 100, cv2.BORDER_CONSTANT, value=255))"

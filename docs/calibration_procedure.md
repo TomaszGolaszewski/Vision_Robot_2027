@@ -32,7 +32,7 @@ Prepare:
 
 Procedure:
 1. From the repo root run
-   `ros2 run robot_machining_controller calibrate_camera --output src/robot_machining_controller/config/camera_calibration.yaml --save-dir ~/calib_views`.
+   `ros2 run robot_machining_controller calibrate_camera --output src/robot_machining_controller/config/camera_calibration_<camera>.yaml --save-dir ~/calib_views`.
    `--from-dir ~/calib_views` recalibrates from the saved PNGs later, without the camera.
 2. Save (SPACE) 20-30 views: board in the centre and in **all four image corners and edges**, tilted up to about 45 deg
    in different directions, at different distances. Keep it still when saving (motion blur). Blue dots show the
@@ -45,7 +45,7 @@ Procedure:
 5. Check: marker at a distance measured with a tape, `ros2 topic echo /workpiece_position` with `detect_marker`
    (`z` = distance). Expect an error below about 1 %.
 
-Result: `config/camera_calibration.yaml` (ROS camera_info format), committed with the code. Redo it after any change of
+Result: `config/camera_calibration_<camera>.yaml` (ROS camera_info format), committed with the code. Redo it after any change of
 the camera, lens, focus or resolution.
 Fallback only: `dpmm`, `nominal_distance_mm` in `config/params.yaml`. Correct them with `dpmm_new = dpmm * true_distance / measured_z`.
 

@@ -10,7 +10,7 @@ operator and follows it. The user writes in Polish; answer in Polish. Code, comm
 - Cameras on the dev machine: laptop webcam (`/dev/video0`, Lenovo EasyCamera) and the USB camera in use
   (`0c45:64ab` "FLH-201016 Integrated Camera", `/dev/v4l/by-id/usb-FLH-201016_Integrated_Camera-video-index0`).
   The USB camera is stable only at 640x480 (30 fps MJPG); at 1280x720 it drops off the bus (`error -71`, cable/power).
-  This camera is also the one on the robot. Its `/dev/videoN` number changes on every replug; `detect_marker.launch.py`
+  A second unit of the same model shows up as `usb-FLH-200917_...`; pick it with `camera:=200917`. This camera is also the one on the robot. Its `/dev/videoN` number changes on every replug; `detect_marker.launch.py`
   resolves it from the by-id path (`device_id:=auto`) and fails when it is unplugged (no fallback: wrong camera = wrong
   mount TF on the robot). No `usb_cam`/`v4l2_camera`; images come from `image_tools/cam2image`.
 
@@ -40,7 +40,7 @@ image_raw, camera_info -> workpiece_position_detector -> workpiece_position -> t
 - `workpiece_position_detector`: `cv2.aruco.detectMarkers` (subpixel corners, one `marker_id`) +
   `solvePnPGeneric(IPPE_SQUARE)` + `solvePnPRefineLM`, transforms the code pose to
   `base_link` with TF **at the image stamp** (robot motion compensation). Intrinsics from `camera_calibration_file`
-  (`config/camera_calibration.yaml`, written by `calibrate_camera`) or `camera_info`, else from DPMM. Images of
+  (`config/camera_calibration_<camera>.yaml`, per camera unit, written by `calibrate_camera`) or `camera_info`, else from DPMM. Images of
   another resolution than the calibrated one are refused.
 - `trajectory_generator`: OpenCV Kalman (state: position, velocity, quaternion), `mode` = `direct` | `circle`
   (switchable live via `ros2 param set`), stops publishing after `lost_timeout_s`.
@@ -71,7 +71,7 @@ Parameter defaults live in two places: `declare_parameter(...)` in the node and 
 - Detection takes ~2.5 ms at 640x480, ~11 ms at 1280x960; the image subscription has depth 1 (newest frame only).
 - Calibration board: ChArUco 7x5 squares, 25 mm square, 18 mm marker, `DICT_6X6_250` (ids 0-16, top-left square black).
   OpenCV 4.6 board frame: origin top-left, x right, y down (same as `board.draw`).
-- USB camera intrinsics (`config/camera_calibration.yaml`, 2026-11-23, 25 views, RMS 0.44 px): fx ~597 px, strong barrel
+- USB camera 201016 intrinsics (`config/camera_calibration_201016.yaml`, 2026-11-23, 25 views, RMS 0.44 px): fx ~597 px, strong barrel
   distortion (k1 ~-0.36, ~60 px in the image corners; consistent across calibrations, so real). Split-half check:
   fx +-3 %, cx +-30 px; more strongly tilted views (> 30 deg) would tighten it. The DPMM fallback (f = 924) is ~55 % off.
 - Camera calibration uses `CALIB_FIX_K3`; with a small board k3 overfits. Views in the image corners are essential:

@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.5] - 2026-11-24
+
+### Added
+ 
+- Added the `camera` launch argument to select one of the two USB cameras (`201016` or `200917`).
+ 
+### Changed
+ 
+- Renamed `config/camera_calibration.yaml` to `config/camera_calibration_201016.yaml`.
+- Updated launch files to load `config/camera_calibration_<camera>.yaml` automatically.
+
 ## [0.1.4] - 2026-11-23
 
 ### Added

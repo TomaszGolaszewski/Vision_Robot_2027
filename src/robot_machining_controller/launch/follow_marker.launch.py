@@ -18,7 +18,7 @@ def generate_launch_description():
         # `ros2 launch ... mode:=circle` overrides the path mode from params.yaml
         DeclareLaunchArgument('mode', default_value='direct', description='direct | circle'),
         # USB camera + camera mount TF + detector (topic workpiece_position); robot TF from the real driver;
-        # its arguments (device_id, width, height, dpmm, show_image) can be passed here as well
+        # its arguments (camera, device_id, width, height, dpmm, show_image) can be passed here as well
         IncludeLaunchDescription(os.path.join(share, 'launch', 'detect_marker.launch.py'),
                                  launch_arguments={'fake_robot': 'false'}.items()),
         # code pose -> filtered, desired tool0 pose on the path (topic robot_position)
