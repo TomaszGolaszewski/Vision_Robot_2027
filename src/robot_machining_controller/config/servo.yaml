@@ -1,0 +1,37 @@
+# MoveIt Servo (moveit_servo 2.12, Jazzy) for the CRX-10iA/L with the FANUC ROS 2 driver.
+# robot_controller -> ~/pose_target_cmds (flange pose) -> Servo IK -> /forward_position_controller/commands
+# (joint positions, streamed to the robot by J519 Stream Motion). Schema: moveit_servo/config/servo_parameters.yaml
+move_group_name: manipulator           # fanuc_moveit_config srdf: chain base_link -> flange
+publish_period: 0.01                   # [s] 100 Hz to the controller (controller_manager runs at 500 Hz)
+max_expected_latency: 0.1
+incoming_command_timeout: 0.1          # [s] robot_controller sends at 50 Hz; Servo halts when it stops
+
+command_in_type: speed_units
+scale:
+  linear: 0.1                          # [m/s] pose tracking speed cap, same as robot_controller max_linear_speed
+  rotational: 0.5                      # [rad/s] same as robot_controller max_angular_speed
+  joint: 0.5
+pose_command_in_topic: ~/pose_target_cmds
+
+command_out_type: std_msgs/Float64MultiArray
+command_out_topic: /forward_position_controller/commands
+publish_joint_positions: true          # forward_position_controller takes positions only
+publish_joint_velocities: false
+publish_joint_accelerations: false
+joint_topic: /joint_states
+status_topic: ~/status
+
+use_smoothing: true
+smoothing_filter_plugin_name: online_signal_smoothing::ButterworthFilterPlugin
+
+# no move_group running: Servo owns the planning scene
+is_primary_planning_scene_monitor: true
+check_collisions: true
+collision_check_rate: 10.0
+self_collision_proximity_threshold: 0.01
+scene_collision_proximity_threshold: 0.02
+
+lower_singularity_threshold: 17.0
+hard_stop_singularity_threshold: 30.0
+leaving_singularity_threshold_multiplier: 2.0
+joint_limit_margins: [0.12]

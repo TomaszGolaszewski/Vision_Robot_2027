@@ -20,6 +20,11 @@
   <exec_depend>python3-scipy</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
   <exec_depend>image_tools</exec_depend>
+  <exec_depend>fanuc_msgs</exec_depend>
+  <exec_depend>fanuc_forward_command</exec_depend>
+  <exec_depend>moveit_msgs</exec_depend>
+  <exec_depend>moveit_servo</exec_depend>
+  <exec_depend>moveit_configs_utils</exec_depend>
 
   <test_depend>python3-pytest</test_depend>
 

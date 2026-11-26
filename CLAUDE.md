@@ -7,6 +7,9 @@ operator and follows it. The user writes in Polish; answer in Polish. Code, comm
 
 - ROS 2 Jazzy, Python only (`ament_python`), OpenCV 4.6 (with `cv2.aruco`), numpy, scipy.
 - Single package: `src/robot_machining_controller`. Workspace root = repo root (`build/ install/ log/` are git-ignored).
+- FANUC ROS 2 driver (official, `FANUC-CORPORATION/fanuc_driver` main + `fanuc_description`) is an underlay in
+  `~/ws_fanuc` (outside the repo): `source ~/ws_fanuc/install/setup.bash` before building. Robot: `crx10ia_l`,
+  IP 192.168.1.100, controller has J519 + R912. Meshes need `git-lfs`.
 - Cameras on the dev machine: laptop webcam (`/dev/video0`, Lenovo EasyCamera) and the USB camera in use
   (`0c45:64ab` "FLH-201016 Integrated Camera", `/dev/v4l/by-id/usb-FLH-201016_Integrated_Camera-video-index0`).
   The USB camera is stable only at 640x480 (30 fps MJPG); at 1280x720 it drops off the bus (`error -71`, cable/power).
@@ -22,6 +25,7 @@ colcon build --packages-select robot_machining_controller && source install/setu
 colcon test --packages-select robot_machining_controller && colcon test-result --verbose
 cd src/robot_machining_controller && python3 -m pytest test -q        # fast, no build needed
 ros2 launch robot_machining_controller detect_marker.launch.py         # camera + detector, fake robot TF
+ros2 launch robot_machining_controller robot.launch.py use_mock:=true       # FANUC driver (mock) + MoveIt Servo
 ros2 launch robot_machining_controller follow_marker.launch.py mode:=circle  # full chain: includes detect_marker (fake_robot:=false), needs robot TF
 ```
 
@@ -31,26 +35,30 @@ Expected test result: all pass, 2 `xfail` (50 mm marker at 640x480 is too small 
 
 ```
 image_raw, camera_info -> workpiece_position_detector -> workpiece_position -> trajectory_generator
-                                                                                   | robot_position
-                                    /servo_node/pose_target_cmds <- robot_controller <-+
+                          (Kalman inside)                                          | robot_position
+FANUC driver <- MoveIt Servo <- /servo_node/pose_target_cmds <- robot_controller <-+
 ```
 
 - `pose_math.py`: all geometry, PnP, Kalman filter, step limiter, ROS<->pose conversions. No node logic, unit tested.
   Put new math here with a test; keep nodes thin.
 - `workpiece_position_detector`: `cv2.aruco.detectMarkers` (subpixel corners, one `marker_id`) +
   `solvePnPGeneric(IPPE_SQUARE)` + `solvePnPRefineLM`, transforms the code pose to
-  `base_link` with TF **at the image stamp** (robot motion compensation). Intrinsics from `camera_calibration_file`
+  `base_link` with TF **at the image stamp** (robot motion compensation), then Kalman (state: position, velocity,
+  quaternion) stepped at the image stamps; publishes only frames with a detection (`workpiece_position_raw` = unfiltered). Intrinsics from `camera_calibration_file`
   (`config/camera_calibration_<camera>.yaml`, per camera unit, written by `calibrate_camera`) or `camera_info`, else from DPMM. Images of
   another resolution than the calibrated one are refused.
-- `trajectory_generator`: OpenCV Kalman (state: position, velocity, quaternion), `mode` = `direct` | `circle`
+- `trajectory_generator`: `mode` = `direct` | `circle`
   (switchable live via `ros2 param set`), stops publishing after `lost_timeout_s`.
-  Publishes the desired **tool0** pose (camera target composed with the static mount TF).
-- `robot_controller`: safety gate, workspace box, linear/angular speed limit, command timeout, ramps from the
-  actual tool0 pose (TF). Output to MoveIt Servo pose topic.
+  Publishes the desired **fanuc_flange** pose (camera target composed with the static mount TF).
+- `robot_controller`: safety gate: FANUC driver status (`/fanuc_gpio_controller/connection_status`, `robot_status`),
+  workspace box, linear/angular speed limit, command timeout, ramps from the actual fanuc_flange pose (TF).
+  Output to the MoveIt Servo pose topic as the `flange` pose (Servo group tip). Servo (`config/servo.yaml`,
+  `launch/robot.launch.py`) streams joint positions to `forward_position_controller`.
 
 Conventions: `geometry_msgs/PoseStamped` in `base_link`, SI units (m, rad), quaternion (x, y, z, w).
 Code frame: x right, y up, z out of the board. Camera: ROS optical frame (z forward, y down).
-Frames: `base_link -> tool0 -> camera_optical_frame`.
+Frames: `base_link -> ... -> flange -> fanuc_flange -> camera_optical_frame` (no `tool0` in the FANUC URDF;
+`fanuc_flange` = FANUC flange frame, UTOOL 0 on the pendant). Without the robot: `fake_tcp` launch argument.
 
 Parameter defaults live in two places: `declare_parameter(...)` in the node and `config/params.yaml`. Keep them in sync.
 
@@ -81,11 +89,11 @@ Parameter defaults live in two places: `declare_parameter(...)` in the node and 
 
 ## Placeholders (must be replaced before the real robot)
 
-- Camera mount TF `tool0 -> camera_optical_frame` (`--z 0.1`) in `launch/detect_marker.launch.py` (included by
+- Camera mount TF `fanuc_flange -> camera_optical_frame` (`--z 0.1`) in `launch/detect_marker.launch.py` (included by
   `follow_marker.launch.py`). Replace it with the hand-eye calibration result.
 - Workspace box `workspace_min/max` in `config/params.yaml`.
 - Kalman noise values were tuned on synthetic data only.
-- Robot driver not chosen yet (FANUC ROS 2 driver / RMI); `robot_controller` targets MoveIt Servo.
+- `config/servo.yaml` (singularity thresholds, smoothing) is untested on the real robot.
 
 ## Plan and rules
 

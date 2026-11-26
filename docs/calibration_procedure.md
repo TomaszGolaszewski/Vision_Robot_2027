@@ -71,7 +71,7 @@ Recordings (`ros2 bag record /image_raw /camera_info /tf /tf_static`):
 Result: the `kalman_*` parameters in `config/params.yaml` and in the `declare_parameter` defaults.
 Keep the bags. They are the test set for the next retune.
 
-## 5. Hand-eye calibration (`tool0 -> camera_optical_frame`)
+## 5. Hand-eye calibration (`fanuc_flange -> camera_optical_frame`)
 
 Prepare:
 - The camera in its final mount. Any later move of the camera on the wrist invalidates the result.
@@ -90,7 +90,7 @@ Result: replace the placeholder `--z 0.1` static transform in `launch/detect_mar
 
 ### What the code checks
 
-`robot_controller` checks the **target position of `tool0`** (flange centre) against an axis-aligned box in `base_link`.
+`robot_controller` checks the **target position of `fanuc_flange`** (flange centre) against an axis-aligned box in `base_link`.
 It does not check orientation, and it does not check the camera, the tool or the robot arm.
 If the target is outside the box, the robot does not move and a warning is logged.
 
@@ -107,7 +107,7 @@ If the target is outside the box, the robot does not move and a warning is logge
 ### How to measure
 
 1. Mount the final camera and tool. They usually hit first.
-2. On the pendant set **UFRAME = 0, UTOOL = 0**. X, Y, Z then show the flange in the World frame, which corresponds to `tool0`.
+2. On the pendant set **UFRAME = 0, UTOOL = 0**. X, Y, Z then show the flange in the World frame, which corresponds to `fanuc_flange`.
 3. In T1 at low speed, jog to each of the 6 limits with the wrist orientation used during tracking (camera facing the operator). Write down the coordinate.
 4. Subtract a margin of 50-100 mm towards the inside of the box.
 5. Convert mm to m.
@@ -116,7 +116,7 @@ Also write down:
 - **What limits each value** (e.g. "z_min: table top at 0.72 m"). After a change in the cell this shows what to recheck.
 - **2-3 control points** (full pendant poses). They are used to check that the FANUC World frame matches `base_link` in the URDF. The origin may be shifted, e.g. in Z. Verify this in simulation (stage 3) before using the box on the real robot.
 - **The operator zone**: the approximate X, Y, Z range where the operator holds the board.
-  The robot places `tool0` about `standoff_m` + camera offset (now 0.44 + 0.1 = 0.54 m) in front of the board.
+  The robot places `fanuc_flange` about `standoff_m` + camera offset (now 0.44 + 0.1 = 0.54 m) in front of the board.
   The operator zone shifted by that distance towards the robot must fit inside the box. Otherwise the robot will not move.
 
 ### Limits

@@ -263,3 +263,9 @@ def compose(a, b):
     """Pose a * pose b, both as (position, Rotation)."""
     # e.g. compose(camera in base, code in camera) = code in base
     return a[0] + a[1].apply(b[0]), a[1] * b[1]
+
+
+def inverse(a):
+    """Inverse of a (position, Rotation) pose, e.g. camera in base -> base in camera."""
+    r = a[1].inv()
+    return -r.apply(a[0]), r

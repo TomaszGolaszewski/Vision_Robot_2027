@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.1.6] - 2026-11-26
+
+### Added
+
+- Added a blue outline of the Kalman-filtered marker pose to `image_debug`.
+- Added the `workpiece_position_raw` topic for the unfiltered marker pose and Kalman filter tuning.
+- Added the `fake_tcp` launch argument (`"x y z roll pitch yaw"`) for use with `fake_robot:=true`.
+- Added the `fake_robot` argument to `follow_marker.launch.py`.
+- Added `robot.launch.py` with the FANUC ROS 2 driver (`forward_position_controller`, mock or real) and MoveIt Servo.
+- Added robot status checks to `robot_controller`; command transmission stops on driver disconnect, alarm, e-stop, teach mode, or unavailable motion.
+- Added the `mock_robot` argument to `follow_marker.launch.py` (`require_robot_status:=false`).
+
+### Changed
+
+- Moved the Kalman filter from `trajectory_generator` to `workpiece_position_detector`; `workpiece_position` is now filtered and predicted through short detection dropouts.
+- Moved the `kalman_*` and `lost_timeout_s` parameters to `workpiece_position_detector`.
+- Renamed the tool frame from `tool0` to `fanuc_flange`.
+- Changed `robot_controller` to publish Servo targets as the `flange` pose.
+
 ## [0.1.5] - 2026-11-24
 
 ### Added

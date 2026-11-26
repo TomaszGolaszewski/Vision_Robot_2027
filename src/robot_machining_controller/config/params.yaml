@@ -11,6 +11,11 @@ workpiece_position_detector:
     dpmm: 210.0                # px per 100 mm at nominal_distance_mm
     nominal_distance_mm: 440.0
     show_image: false          # cv2.imshow window; the same picture is on topic image_debug
+    lost_timeout_s: 0.5        # no detection for longer -> Kalman restarts from the next detection
+    kalman_accel_noise: 0.25   # [m^2/s^4] board acceleration variance
+    kalman_rot_noise: 0.001    # quaternion random walk per second
+    kalman_pos_meas_noise: 1.0e-6  # [m^2] (1 mm std)
+    kalman_rot_meas_noise: 1.0e-4
 
 trajectory_generator:
   ros__parameters:
@@ -21,21 +26,20 @@ trajectory_generator:
     lost_timeout_s: 0.5
     rate_hz: 30.0
     camera_frame: camera_optical_frame
-    tool_frame: tool0
-    kalman_accel_noise: 0.25   # [m^2/s^4] board acceleration variance
-    kalman_rot_noise: 0.001    # quaternion random walk per second
-    kalman_pos_meas_noise: 1.0e-6  # [m^2] (1 mm std)
-    kalman_rot_meas_noise: 1.0e-4
+    tool_frame: fanuc_flange   # FANUC flange frame (UTOOL 0 on the pendant), from fanuc_description
 
 robot_controller:
   ros__parameters:
     base_frame: base_link
-    tool_frame: tool0
+    tool_frame: fanuc_flange
+    servo_frame: flange        # tip of the MoveIt Servo group (fanuc_moveit_config srdf)
     output_topic: /servo_node/pose_target_cmds
     rate_hz: 50.0
     max_linear_speed: 0.1      # [m/s]
     max_angular_speed: 0.5     # [rad/s]
     command_timeout_s: 0.5
+    status_timeout_s: 0.2      # FANUC driver status older than this -> stop sending
+    require_robot_status: true # false only with robot.launch.py use_mock:=true (mock publishes no status)
     # shortcut: placeholder box, measure the real safe zone in the cell before stage 4
     workspace_min: [0.3, -0.6, 0.1]
     workspace_max: [1.2, 0.6, 1.2]

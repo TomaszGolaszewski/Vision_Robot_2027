@@ -5,7 +5,8 @@ from scipy.spatial.transform import Rotation
 
 from robot_machining_controller.pose_math import (FACING, PoseKalman, aruco_detector, calibrate_charuco_robust,
                                                   camera_matrix_from_dpmm, camera_target, charuco_board,
-                                                  detect_marker_pose, find_charuco_corners, limit_step,
+                                                  compose, detect_marker_pose, find_charuco_corners, inverse,
+                                                  limit_step,
                                                   load_camera_info_yaml, marker_object_points,
                                                   marker_pose_from_corners, save_camera_info_yaml)
 
@@ -206,3 +207,8 @@ def test_limit_step():
     # small steps pass through unchanged
     p, r = limit_step(p0, r0, np.array([0.001, 0, 0]), Rotation.from_euler('z', 0.005), 0.002, 0.01)
     assert np.allclose(p, [0.001, 0, 0]) and angle_deg(r, Rotation.from_euler('z', 0.005)) < 1e-6
+
+
+def test_inverse():
+    p, r = compose(inverse((CODE_P, CODE_R)), (CODE_P, CODE_R))
+    assert np.allclose(p, 0) and r.magnitude() == pytest.approx(0, abs=1e-9)
