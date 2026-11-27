@@ -2,11 +2,19 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 
 PKG = 'robot_machining_controller'
+
+
+def check_fixed_camera(context):
+    """A desk camera (fixed_camera) would drive the real robot from a wrong camera pose: mock only."""
+    if (LaunchConfiguration('fixed_camera').perform(context)
+            and LaunchConfiguration('mock_robot').perform(context).lower() != 'true'):
+        raise RuntimeError('fixed_camera is for the simulation only, it needs mock_robot:=true')
+    return []
 
 
 def generate_launch_description():
@@ -22,6 +30,10 @@ def generate_launch_description():
         # only together with robot.launch.py use_mock:=true: the FANUC mock publishes no robot status
         DeclareLaunchArgument('mock_robot', default_value='false',
                               description='true = do not require the FANUC driver status (mock hardware only)'),
+        DeclareLaunchArgument('fixed_camera', default_value='',
+                              description='simulation only (mock_robot:=true): desk camera pose in base_link, '
+                                          '"x y z roll pitch yaw" [m, rad]'),
+        OpaqueFunction(function=check_fixed_camera),
         # USB camera + camera mount TF + detector with Kalman (topic workpiece_position); robot TF from the driver;
         # its arguments (camera, device_id, width, height, dpmm, show_image, fake_tcp) can be passed here as well
         IncludeLaunchDescription(os.path.join(share, 'launch', 'detect_marker.launch.py'),

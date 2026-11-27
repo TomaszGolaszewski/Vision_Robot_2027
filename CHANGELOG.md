@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.8] - 2026-11-27
+
+### Added
+
+- Added the `fixed_camera` argument (`"x y z roll pitch yaw"`) to `detect_marker.launch.py` and `follow_marker.launch.py` to set the camera pose in `base_link` when running with `mock_robot:=true`.
+
 ## [0.1.7] - 2026-11-27
 
 ### Added

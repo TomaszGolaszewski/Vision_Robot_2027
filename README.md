@@ -154,6 +154,38 @@ ros2 param set /trajectory_generator mode direct                    # direct | c
 In RViz, `Add` -> `By topic` shows `/workpiece_position`, `/robot_position` and `/servo_node/pose_target_cmds` as
 `Pose` displays (`view_crx.rviz` from the driver shows only the robot and TF).
 
+**Variant: follow the hand-held marker with the real camera.** Instead of steps 2 and 3 (terminal 1 stays as it is),
+one terminal runs the whole chain (USB camera, detector, trajectory generator, robot controller, camera mount TF):
+
+```bash
+ros2 launch robot_machining_controller follow_marker.launch.py mock_robot:=true mode:=direct \
+  fixed_camera:="0.564 -0.258 0.274 -2.5894 1.2534 -2.5178"
+```
+
+The camera stays on the desk, so `fixed_camera` places it in `base_link` where the virtual camera is at the default
+`mock_home` pose; images are stamped with `fixed_camera_optical_frame` instead of `camera_optical_frame`. Moving the
+marker in front of the real camera then moves it in the robot's world, and the robot keeps its virtual camera 0.44 m
+in front of it. Hold the marker about 0.44 m in front of the camera, facing it, then move it slowly: the robot starts
+from the start pose without a jump. `fixed_camera` is refused without `mock_robot:=true` (it would drive the real robot from a wrong camera pose). With
+another `mock_home` pose, read the new camera pose with
+`ros2 run tf2_ros tf2_echo base_link camera_optical_frame` (RPY in radians) and pass it as `fixed_camera`.
+
+Detection preview (green outline + marker axes = pose accepted, red = rejected, blue = Kalman-filtered pose,
+plus fps and markers/s), either as a window opened by the detector:
+
+```bash
+ros2 launch robot_machining_controller follow_marker.launch.py mock_robot:=true mode:=direct \
+  fixed_camera:="0.564 -0.258 0.274 -2.5894 1.2534 -2.5178" show_image:=true
+```
+
+or, with the launch above unchanged, from the `image_debug` topic in another terminal (drawn only while subscribed):
+
+```bash
+ros2 run rqt_image_view rqt_image_view /image_debug
+```
+
+In RViz the same view is `Add` -> `By topic` -> `/image_debug` -> `Image`, next to the robot.
+
 **Stop:** Ctrl+C in every terminal; the mock restarts from `mock_home` next time.
 
 Troubleshooting:
@@ -161,6 +193,8 @@ Troubleshooting:
 - `Package 'robot_machining_controller' not found`: the terminal is not sourced (see above) or the build failed.
 - Robot does not move, `/servo_node/status` says `singularity`: the target is near a singularity, move the marker.
 - `robot_controller` warns `outside workspace`: the `fanuc_flange` target is outside `workspace_min/max`.
+- `cam2image`: `Could not open video stream` / `Could not read from resource`: the USB camera dropped off the bus
+  (cable or power), replug it.
 
 ### Known limitations (stage 1)
 
