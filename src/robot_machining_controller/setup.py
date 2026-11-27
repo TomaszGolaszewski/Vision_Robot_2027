@@ -27,6 +27,7 @@ setup(
             'trajectory_generator = robot_machining_controller.trajectory_generator:main',
             'robot_controller = robot_machining_controller.robot_controller:main',
             'calibrate_camera = robot_machining_controller.calibrate_camera:main',
+            'mock_home = robot_machining_controller.mock_home:main',
         ],
     },
 )

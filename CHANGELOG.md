@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.7] - 2026-11-27
+
+### Added
+
+- Added the `mock_home` node and `robot.launch.py` argument (`"J1 .. J6"` in degrees) to set the initial mock robot joint pose when `use_mock:=true`.
+
 ## [0.1.6] - 2026-11-26
 
 ### Added

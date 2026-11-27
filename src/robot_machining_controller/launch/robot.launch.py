@@ -32,6 +32,14 @@ def servo(context):
                              moveit_config.robot_description_kinematics, moveit_config.joint_limits])]
 
 
+def mock_home(context):
+    """Mock only: the mock starts at all zeros, a wrist singularity where Servo does not move."""
+    if LaunchConfiguration('use_mock').perform(context).lower() != 'true':
+        return []
+    positions = [float(a) for a in LaunchConfiguration('mock_home').perform(context).split()]
+    return [Node(package=PKG, executable='mock_home', output='screen', parameters=[{'positions_deg': positions}])]
+
+
 def generate_launch_description():
     """FANUC ROS 2 driver (ros2_control, forward_position_controller, gpio status) + MoveIt Servo.
 
@@ -45,10 +53,13 @@ def generate_launch_description():
                               description='true = FANUC mock hardware; false = the real robot at robot_ip'),
         DeclareLaunchArgument('robot_ip', default_value='192.168.1.100'),
         DeclareLaunchArgument('launch_rviz', default_value='true'),
+        DeclareLaunchArgument('mock_home', default_value='-50.5 25.0 -40.0 -118.0 -61.0 -13.0',
+                              description='use_mock only: start joint pose J1..J6 [deg, pendant values]'),
         # ros2_control node + robot_state_publisher (TF base_link -> ... -> fanuc_flange) + controller spawners:
         # joint_state_broadcaster, fanuc_gpio_controller (connection / robot status), forward_position_controller
         IncludeLaunchDescription(driver, launch_arguments={
             'robot_model': ROBOT_MODEL, 'use_mock': LaunchConfiguration('use_mock'),
             'robot_ip': LaunchConfiguration('robot_ip'), 'launch_rviz': LaunchConfiguration('launch_rviz')}.items()),
         OpaqueFunction(function=servo),
+        OpaqueFunction(function=mock_home),
     ])

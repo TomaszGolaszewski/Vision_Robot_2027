@@ -23,6 +23,8 @@
   <exec_depend>fanuc_msgs</exec_depend>
   <exec_depend>fanuc_forward_command</exec_depend>
   <exec_depend>moveit_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>std_srvs</exec_depend>
   <exec_depend>moveit_servo</exec_depend>
   <exec_depend>moveit_configs_utils</exec_depend>
 
